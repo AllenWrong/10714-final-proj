@@ -754,5 +754,66 @@ def flip(a, axes):
 def summation(a, axis=None, keepdims=False):
     return a.sum(axis=axis, keepdims=keepdims)
 
+
 def dilate(a, axes, dilation):
     return a.dilate(axes, dilation)
+
+
+def concatenate(its: tuple, axis):
+    # compute out shape
+    it_shape = its[0].shape
+    out_shape = list(it_shape)
+    out_shape[axis] = 0
+
+    for tensor in its:
+        # check shape
+        for i in range(len(tensor.shape)):
+            if i == axis:
+                out_shape[axis] += tensor.shape[i]
+            else:
+                assert tensor.shape[i] == it_shape[i], \
+                f"shape on axis {i} must be eq, except shape on axis {axis}!"
+
+    # create a empty array and set value
+    ret_arr = empty(out_shape)
+    raw_idxs = []
+    for i in range(len(out_shape) - 1):
+        # build indexes
+        raw_idxs.append(slice(0, out_shape[i], 1))
+
+    start_idx = 0
+    for tensor in its:
+        idxs = raw_idxs.copy()
+        idxs.insert(axis, slice(start_idx, start_idx + tensor.shape[axis], 1))
+        ret_arr[tuple(idxs)] = tensor
+        start_idx += tensor.shape[axis]
+    
+    # return
+    return ret_arr
+
+
+def eye(n, device=None):
+    I = full((n, n), 0, device=device)
+    for i in range(n):
+        I[i, i] = 1
+    return I
+
+class linalg:
+    """be consistent with numpy.linalg.inv"""
+
+    @staticmethod
+    def inv(x):
+        aug = concatenate([x, eye(x.shape[0], device=x.device)], axis=1)
+        row, col = x.shape
+
+        for i in range(row):
+            aug[i, :] = aug[i, :] / aug[i, i].compact().broadcast_to((1, 2*col))
+            for j in range(i + 1, row):
+                aug[j, :] = aug[j, :] - aug[j, i].compact().broadcast_to((1, 2*col)) * aug[i, :]
+
+        for i in range(row - 1, 0, -1):
+            for j in range(i - 1, -1, -1):
+                aug[j, :] -= aug[j, i].compact().broadcast_to((1, 2*col)) * aug[i, :]
+
+        return aug[:, col:]
+

@@ -391,6 +391,9 @@ class Tensor(Value):
     def transpose(self, axes=None):
         return needle.ops.Transpose(axes)(self)
 
+    def __getitem__(self, idxs):
+        return needle.ops.get_item(self, idxs)
+
     __radd__ = __add__
     __rmul__ = __mul__
     __rmatmul__ = __matmul__

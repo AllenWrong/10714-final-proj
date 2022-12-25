@@ -696,4 +696,83 @@ def conv(a, b, stride=1, padding=1):
     return Conv(stride, padding)(a, b)
 
 
+class GetItem(TensorOp):
+    def __init__(self, shape: tuple, idxs: tuple):
+        """
+        Args:
+            shape: shape of the input
+            idxs: tuple contains slice
+        """
+        self.shape = shape
+        self.idxs = idxs
+
+    def compute(self, a):
+        
+        return a[self.idxs]
+
+    def gradient(self, out_grad, node):
+        zeros = array_api.full(self.shape, 0)
+        zeros[self.idxs] = out_grad.numpy()
+        return Tensor(zeros, device=out_grad.device)
+
+
+def get_item(a, idxs):
+    return GetItem(a.shape, idxs)(a)
+
+
+class Concat(TensorOp):
+    def __init__(self, axis: int):
+        self.axis = axis
+
+    def compute(self, tensors: tuple):
+        return array_api.concatenate(tensors, self.axis)
+    
+    def gradient(self, out_grad, node):
+        out_shape = out_grad.shape
+        raw_idxs = []
+        for i in range(len(out_shape) - 1):
+            # build indexes
+            raw_idxs.append(slice(0, out_shape[i], 1))
+
+        start_idx = 0
+        grads = []
+        inputs, = node.inputs
+        for i in range(len(inputs)):
+            inp = inputs[i]
+            idxs = raw_idxs.copy()
+            idxs.insert(self.axis, slice(start_idx, start_idx + inp.shape[self.axis], 1))
+            grads.append(out_grad[tuple(idxs)])
+            start_idx += inp.shape[self.axis]
+
+        return make_tuple(*grads)
+
+def cat(tensors, axis):
+    if isinstance(tensors, list):
+        tensors = make_tuple(*tensors)
+
+    if len(tensors) == 1:
+        return tensors[0]
+
+    return Concat(axis)(tensors)
+    
+
+class Inv(TensorOp):
+    def __init___(self):
+        # which will be used in gradient
+        self.a_inv = None
+
+    def compute(self, a):
+        self.a_inv = array_api.linalg.inv(a)
+        return self.a_inv
+
+    def gradient(self, grad, node):
+        a_inv_tensor = Tensor(self.a_inv, device=grad.device)
+        return transpose(mul_scalar(a_inv_tensor, -1) @ transpose(grad) @ a_inv_tensor)
+
+
+def inv(a):
+    if a.shape == (1, 1):
+        return a
+    return Inv()(a)
+
 
